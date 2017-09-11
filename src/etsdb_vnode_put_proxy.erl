@@ -30,7 +30,8 @@
     handle_cast/2,
     handle_info/2,
     terminate/2,
-    code_change/3]).
+    code_change/3,
+    delete/2]).
 
 -define(SERVER, ?MODULE).
 
@@ -45,6 +46,14 @@ put(AccHandler,Bucket,Data)->
     SerializedData = Bucket:serialize(Data),
     gen_server:cast(To,{put,AccHandler,SerializedData}).
 
+delete(Bucket,Id)->
+    {ok,Ring} = riak_core_ring_manager:get_my_ring(),
+    PartitionKey = Bucket:partition_by_id(Id),
+    Idx = crypto:hash(sha,PartitionKey),
+    Partition=riak_core_ring:responsible_index(Idx,Ring),
+    To = reg_name(Partition,Bucket),
+    Key = Bucket:object_key(Id),
+    gen_server:cast(To,{delete,Key}).
 
 
 reg_name(Partition,Bucket)->
@@ -69,6 +78,9 @@ handle_call({put,Data},From, State) ->
 
 handle_cast({put,From,Data}, State) ->
     NewState = add_data(From,Data,State),
+    {noreply,NewState,timeout(NewState)};
+handle_cast({delete,Data}, State) ->
+    NewState = delete_data(Data,State),
     {noreply,NewState,timeout(NewState)};
 handle_cast({put,Data}, State) ->
     Caller = undefined,
@@ -96,6 +108,15 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+delete_data(Key,#state{partition = Partition, bucket = Bucket, timeout = Timeout}=State)->
+    Fun = fun(_) -> ok end,
+    case etsdb_put_fsm:start_link(Fun,Partition,Bucket,[Key],Timeout,true) of
+        {ok,Pid} when is_pid(Pid)->
+            ok;
+        Else->
+            lager:error("Can't start put fsm for ~p:~p ~p",[Partition,Bucket,Else])
+    end.
 
 add_data(Caller,Data,#state{data=Buffer,count=Count,callers=Callers,max_count=Max}=State)->
     {NewBuffer,NewCount} = lists:foldl(fun(Packet,{BufferAcc,CountAcc})->

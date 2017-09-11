@@ -22,20 +22,24 @@
 -behaviour(gen_fsm).
 
 -export([start_link/5]).
+-export([start_link/6]).
 
 
 -export([init/1, execute/2,wait_result/2,prepare/2, handle_event/3,
      handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 
 -record(results,{num_ok=0,num_fail=0,ok_quorum=0,fail_quorum=0,errors=[]}).
--record(state, {result_hadler,preflist,partition,data,timeout,bucket,results,req_ref}).
+-record(state, {result_hadler,preflist,partition,data,timeout,bucket,results,req_ref,to_delete}).
 
 start_link(ResultHandler,Partition,Bucket,Data,Timeout) ->
-    gen_fsm:start_link(?MODULE, [ResultHandler,Partition,Bucket,Data,Timeout], []).
+    start_link(ResultHandler,Partition,Bucket,Data,Timeout,false).
 
-init([ResultHandler,Partition,Bucket,Data,Timeout]) ->
-    {ok,prepare, #state{result_hadler = ResultHandler,partition=Partition,bucket=Bucket,timeout=Timeout,data=Data},0}.
+start_link(ResultHandler,Partition,Bucket,Data,Timeout,ToDelete) ->
+    gen_fsm:start_link(?MODULE, [ResultHandler,Partition,Bucket,Data,Timeout,ToDelete], []).
 
+init([ResultHandler,Partition,Bucket,Data,Timeout,ToDelete]) ->
+    {ok,prepare, #state{result_hadler = ResultHandler,partition=Partition,bucket=Bucket,
+        timeout=Timeout,data=Data,to_delete=ToDelete},0}.
 
 prepare(timeout, #state{result_hadler  = ResultHandler,partition=Partition,bucket=Bucket}=StateData) ->
     WriteCount = Bucket:w_val(),
@@ -53,13 +57,18 @@ prepare(timeout, #state{result_hadler  = ResultHandler,partition=Partition,bucke
             reply_to_caller(ResultHandler,{error,insufficient_vnodes}),
             {stop,normal,StateData}
     end.
+execute(timeout, #state{preflist=Preflist,data=Data,bucket=Bucket,timeout=Timeout,to_delete=true}=StateData) ->
+    Ref = make_ref(),
+    etsdb_vnode:delete_records(Ref,Preflist,Bucket,Data),
+    {next_state,wait_result, StateData#state{data=undefined,req_ref=Ref},Timeout};
 execute(timeout, #state{preflist=Preflist,data=Data,bucket=Bucket,timeout=Timeout}=StateData) ->
     Ref = make_ref(),
     etsdb_vnode:put_external(Ref,Preflist,Bucket,Data),
     {next_state,wait_result, StateData#state{data=undefined,req_ref=Ref},Timeout}.
 
 
-wait_result({w,Index,ReqID,Res},#state{result_hadler = ResaultHandler,results=Results,req_ref=ReqID,timeout=Timeout}=StateData) ->
+wait_result({w,Index,ReqID,Res}=Msg,#state{result_hadler = ResaultHandler,results=Results,req_ref=ReqID,timeout=Timeout}=StateData) ->
+    lager:info("receive conf in state wait_result: ~p", [Msg]),
     case add_result(Index, Res, Results) of
         #results{}=NewResult->
             {next_state,wait_result, StateData#state{results=NewResult},Timeout};
@@ -68,8 +77,12 @@ wait_result({w,Index,ReqID,Res},#state{result_hadler = ResaultHandler,results=Re
              {stop,normal,StateData}
     end;
 wait_result(timeout,#state{result_hadler = ResaultHandler}=StateData) ->
+    lager:info("timeout in state wait_result"),
     reply_to_caller(ResaultHandler,{error,timeout}),
-    {stop,normal,StateData}.
+    {stop,normal,StateData};
+wait_result(Msg,State)->
+    lager:info("unknown msg in state wait_result: ~p", [Msg]),
+    {stop,normal,State}.
 
 
 handle_event(_Event, StateName, StateData) ->

@@ -68,7 +68,6 @@ execute(timeout, #state{preflist=Preflist,data=Data,bucket=Bucket,timeout=Timeou
 
 
 wait_result({w,Index,ReqID,Res}=Msg,#state{result_hadler = ResaultHandler,results=Results,req_ref=ReqID,timeout=Timeout}=StateData) ->
-    lager:info("receive conf in state wait_result: ~p", [Msg]),
     case add_result(Index, Res, Results) of
         #results{}=NewResult->
             {next_state,wait_result, StateData#state{results=NewResult},Timeout};
@@ -76,13 +75,12 @@ wait_result({w,Index,ReqID,Res}=Msg,#state{result_hadler = ResaultHandler,result
              reply_to_caller(ResaultHandler,ResultToReply),
              {stop,normal,StateData}
     end;
+wait_result({d,_,_,_},State)->
+    {stop,normal,State};
 wait_result(timeout,#state{result_hadler = ResaultHandler}=StateData) ->
     lager:info("timeout in state wait_result"),
     reply_to_caller(ResaultHandler,{error,timeout}),
-    {stop,normal,StateData};
-wait_result(Msg,State)->
-    lager:info("unknown msg in state wait_result: ~p", [Msg]),
-    {stop,normal,State}.
+    {stop,normal,StateData}.
 
 
 handle_event(_Event, StateName, StateData) ->

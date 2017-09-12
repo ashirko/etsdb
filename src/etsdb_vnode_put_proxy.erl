@@ -48,7 +48,7 @@ put(AccHandler,Bucket,Data)->
 
 delete(Bucket,Id)->
     {ok,Ring} = riak_core_ring_manager:get_my_ring(),
-    PartitionKey = Bucket:partition_by_id(Id),
+    PartitionKey = Bucket:partiotion_by_id(Id),
     Idx = crypto:hash(sha,PartitionKey),
     Partition=riak_core_ring:responsible_index(Idx,Ring),
     To = reg_name(Partition,Bucket),

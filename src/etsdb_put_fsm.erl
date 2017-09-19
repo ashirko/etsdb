@@ -32,7 +32,7 @@
 -record(state, {result_hadler,preflist,partition,data,timeout,bucket,results,req_ref,to_delete}).
 
 start_link(ResultHandler,Partition,Bucket,Data,Timeout) ->
-    lager:info("test_data 3: ~p", [{Bucket, Data}]),
+%%    lager:info("test_data 3: ~p", [{Bucket, Data}]),
     start_link(ResultHandler,Partition,Bucket,Data,Timeout,false).
 
 start_link(ResultHandler,Partition,Bucket,Data,Timeout,ToDelete) ->
@@ -64,9 +64,9 @@ execute(timeout, #state{preflist=Preflist,data=Data,bucket=Bucket,timeout=Timeou
     {next_state,wait_result, StateData#state{data=undefined,req_ref=Ref},Timeout};
 execute(timeout, #state{preflist=Preflist,data=Data,bucket=Bucket,timeout=Timeout}=StateData) ->
     Ref = make_ref(),
-    lager:info("test_data 4: ~p", [{Bucket, Data}]),
+%%    lager:info("test_data 4: ~p", [{Bucket, Data}]),
     etsdb_vnode:put_external(Ref,Preflist,Bucket,Data),
-    lager:info("test_data 5: ~p", [{Bucket, Data}]),
+%%    lager:info("test_data 5: ~p", [{Bucket, Data}]),
     {next_state,wait_result, StateData#state{data=undefined,req_ref=Ref},Timeout}.
 
 

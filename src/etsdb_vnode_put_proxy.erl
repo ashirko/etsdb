@@ -44,6 +44,7 @@ put(AccHandler,Bucket,Data)->
     Partition=riak_core_ring:responsible_index(Idx,Ring),
     To = reg_name(Partition,Bucket),
     SerializedData = Bucket:serialize(Data),
+    lager:info("test_data 1: ~p", [{Bucket, Data}]),
     gen_server:cast(To,{put,AccHandler,SerializedData}).
 
 delete(Bucket,Id)->
@@ -136,6 +137,7 @@ timeout(_)->
     0.
 
 start_process(Partition,Bucket,Callers,Buffer,Timeout)->
+    lager:info("test_data 2: ~p", [{Bucket, Buffer}]),
     ResultHandler = fun(Result)->
         lists:foreach(fun(Caller)->
             reply_to_caller(Caller,Result)

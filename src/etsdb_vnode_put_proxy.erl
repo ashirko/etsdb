@@ -70,7 +70,8 @@ handle_call({put,Data},From, State) ->
     NewState = add_data(Caller,Data,State),
     {noreply,NewState,timeout(NewState)};
 handle_call({change_buffer_size, NewBufferSize}, _From, State)->
-    {reply, NewBufferSize, timeout(State#state{max_count = NewBufferSize})}.
+    State1 = State#state{max_count = NewBufferSize},
+    {reply, NewBufferSize, State1, timeout(State1)}.
 
 handle_cast({put,From,Data}, State) ->
     NewState = add_data(From,Data,State),

@@ -22,7 +22,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/4,reg_name/2,put/3]).
+-export([start_link/4,reg_name/2,put/3,change_buffer_size/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -51,6 +51,9 @@ reg_name(Partition,Bucket)->
     FullName="etsb_v_put_proxy_"++atom_to_list(Bucket)++"_"++integer_to_list(Partition),
     list_to_atom(FullName).
 
+change_buffer_size(To, NewBufferSize)->
+    gen_server:call(To, {change_buffer_size, NewBufferSize}).
+
 start_link(Partition,Bucket,BufferSize,Timeout) ->
     RegName = reg_name(Partition,Bucket),
     gen_server:start_link({local, RegName}, ?MODULE, [Partition,Bucket,BufferSize,Timeout], []).
@@ -65,7 +68,10 @@ init([Partition,Bucket,BufferSize,Timeout]) ->
 handle_call({put,Data},From, State) ->
     Caller = {sycn,From},
     NewState = add_data(Caller,Data,State),
-    {noreply,NewState,timeout(NewState)}.
+    {noreply,NewState,timeout(NewState)};
+handle_call({change_buffer_size, NewBufferSize}, _From, State)->
+    State1 = State#state{max_count = NewBufferSize},
+    {reply, NewBufferSize, State1, timeout(State1)}.
 
 handle_cast({put,From,Data}, State) ->
     NewState = add_data(From,Data,State),
@@ -112,7 +118,7 @@ add_data(Caller,Data,#state{data=Buffer,count=Count,callers=Callers,max_count=Ma
 timeout(#state{count=0})->
     infinity;
 timeout(_)->
-    0.
+    10000.
 
 start_process(Partition,Bucket,Callers,Buffer,Timeout)->
     ResultHandler = fun(Result)->

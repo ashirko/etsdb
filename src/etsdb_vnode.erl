@@ -334,10 +334,6 @@ do_get_qyery(_BackEndModule, BackEndRef, _Bucket, _Query) ->
 do_scan(BackEndModule, BackEndRef, Scans) ->
     BackEndModule:scan(Scans, [], BackEndRef).
 
-clear_period(Bucket) ->
-    I = Bucket:clear_period(),
-    I + etsdb_util:random_int(I).
-
 make_dir(undefined) ->
     exit({error, dir_undefined});
 make_dir("undefined" ++ _) ->

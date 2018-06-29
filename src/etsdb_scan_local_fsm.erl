@@ -42,7 +42,12 @@ ack({Scan, Stream, Timeout}, StateData) ->
                                         end, {[], []}, Scans),
         case Stream of
             undefined ->
-                etsdb_vnode:scan(Ref, VNode, Scans1);
+                case Scan#scan_req.index of
+                    true->
+                        etsdb_vnode:index_query(Ref, VNode, Scans1);
+                    _->
+                        etsdb_vnode:scan(Ref, VNode, Scans1)
+                end;
             _ ->
                 etsdb_vnode:stream(Ref, VNode, Scans1, Stream)
         end,

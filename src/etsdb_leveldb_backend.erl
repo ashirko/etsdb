@@ -33,6 +33,7 @@
 -export([init/2,
     save/3,
     scan/5,
+    index/5,
     find_expired/2,
     delete/3,
     stop/1,
@@ -190,6 +191,11 @@ scan(Scans, Acc, #state{ref = Ref, fold_opts = FoldOpts}) ->
     FoldFun = fun() ->
         multi_scan(Scans, Ref, FoldOpts, Acc) end,
     {async, FoldFun}.
+scan_index(Scans, Acc, #state{ref = Ref, fold_opts = FoldOpts}) ->
+    FoldFun = fun() ->
+        multi_scan_index(Scans, Ref, FoldOpts, Acc) end,
+    {async, FoldFun}.
+
 
 custom_scan_spec({M, F, A}) ->
     apply(M, F, A ++ [?MODULE]);
@@ -209,6 +215,20 @@ scan(Bucket, From, To, Acc, #state{ref = Ref, fold_opts = FoldOpts}) ->
         multi_fold(reverse, Ref, FoldOpts, StartIterate, Fun, BatchSize, Acc, Patterns) end,
     {async, FoldFun}.
 
+
+index(Bucket, From, To, Acc, #state{ref = Ref, fold_opts = FoldOpts})->
+    {StartIterate, Fun, BatchSize, Patterns} = case Bucket:scan_spec(From, To, ?MODULE) of
+                                                   {T1, T2, T3, T4} ->
+                                                       {T1, T2, T3, T4};
+                                                   {T1, T2, T3} ->
+                                                       {T1, T2, T3, undefined};
+                                                   {T1, T2} ->
+                                                       {T1, T2, 1, undefined}
+                                               end,
+    FoldFun = fun() ->
+        multi_fold_index(reverse, Ref, FoldOpts, StartIterate, Fun, BatchSize, Acc, Patterns) end,
+    {async, FoldFun}.
+
 multi_scan([], _Ref, _FoldOpts, Acc) ->
     {ok, Acc};
 multi_scan([Scan | Scans], Ref, FoldOpts, Acc) ->
@@ -222,6 +242,25 @@ multi_scan([Scan | Scans], Ref, FoldOpts, Acc) ->
                                                end,
     ExtFoldOpts = [{catch_end_of_data, Scan#pscan_req.catch_end_of_data} | FoldOpts],
     case multi_fold(native, Ref, ExtFoldOpts, StartIterate, Fun, BatchSize, Acc, Patterns) of
+        {ok, Acc1} ->
+            multi_scan(Scans, Ref, FoldOpts, Acc1);
+        Error ->
+            Error
+    end.
+
+multi_scan_index([], _Ref, _FoldOpts, Acc) ->
+    {ok, Acc};
+multi_scan_index([Scan | Scans], Ref, FoldOpts, Acc) ->
+    {StartIterate, Fun, BatchSize, Patterns} = case custom_scan_spec(Scan#pscan_req.function) of
+                                                   {T1, T2, T3, T4} ->
+                                                       {T1, T2, T3, T4};
+                                                   {T1, T2, T3} ->
+                                                       {T1, T2, T3, undefined};
+                                                   {T1, T2} ->
+                                                       {T1, T2, 1, undefined}
+                                               end,
+    ExtFoldOpts = [{catch_end_of_data, Scan#pscan_req.catch_end_of_data} | FoldOpts],
+    case multi_fold_index(native, Ref, ExtFoldOpts, StartIterate, Fun, BatchSize, Acc, Patterns) of
         {ok, Acc1} ->
             multi_scan(Scans, Ref, FoldOpts, Acc1);
         Error ->
@@ -264,6 +303,45 @@ multi_fold(Order, Ref, FoldOpts, StartIterate, Fun, BatchSize, Acc, Patterns) ->
         {coninue, {NextKey, NextFun, ConitnueAcc, Patterns}} ->
             multi_fold(Order, Ref, FoldOpts, NextKey, NextFun, BatchSize, ConitnueAcc, Patterns);
         {break, AccFinal} ->
+            if
+                Order == reverse ->
+                    {ok, lists:reverse(AccFinal)};
+                true ->
+                    {ok, AccFinal}
+            end
+    end.
+
+multi_fold_index(Order, Ref, FoldOpts, StartIterate, Fun, BatchSize, Acc, Patterns) ->
+    try
+        FoldResult0 = case BatchSize > 1 of
+                          true ->
+                              eleveldb:fold_pattern(Ref, Fun, Acc, [{first_key, StartIterate} | FoldOpts], BatchSize, Patterns);
+                          _ ->
+                              eleveldb:fold(Ref, Fun, Acc, [{first_key, StartIterate} | FoldOpts])
+                      end,
+
+        CatchEOD = etsdb_util:propfind(catch_end_of_data, FoldOpts, false),
+        FoldResult = catch_end_of_data(CatchEOD, Fun, FoldResult0, Order, Ref, FoldOpts, BatchSize, Patterns),
+        if
+            Order == reverse ->
+                {ok, lists:reverse(FoldResult)};
+            true ->
+                {ok, FoldResult}
+        end
+    catch
+        {coninue, {NextKey, NextFun, ConitnueAcc}} ->
+            multi_fold(Order, Ref, FoldOpts, NextKey, NextFun, BatchSize, ConitnueAcc, undefined);
+        {coninue, {NextKey, NextFun, ConitnueAcc, Patterns}} ->
+            multi_fold(Order, Ref, FoldOpts, NextKey, NextFun, BatchSize, ConitnueAcc, Patterns);
+        {break, AccFinal0} ->
+            AccFinal = lists:foldl(fun(K,Acc)->
+                case eleveldb:get(Ref, K, []) of
+                    {ok,V} ->
+                        [{K,V} | Acc];
+                    _Else->
+                        Acc
+                end
+                              end, [], AccFinal0),
             if
                 Order == reverse ->
                     {ok, lists:reverse(AccFinal)};

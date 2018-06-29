@@ -44,7 +44,8 @@
     register_bucket/1,
     dump_to/6,
     delete_records/4,
-    stream/4]).
+    stream/4,
+    index_query/3]).
 
 -behaviour(riak_core_vnode).
 
@@ -81,9 +82,10 @@ stream(ReqID, Vnode, Scans,From) ->
     riak_core_vnode_master:command([{Vnode, node()}], #etsdb_get_query_req_v1{get_query = Scans, req_id = ReqID, bucket = {stream,From}}, {fsm, undefined, self()}, etsdb_vnode_master).
 scan(ReqID, Vnode, Scans) ->
     riak_core_vnode_master:command([{Vnode, node()}], #etsdb_get_query_req_v1{get_query = Scans, req_id = ReqID, bucket = custom_scan}, {fsm, undefined, self()}, etsdb_vnode_master).
+index_query(ReqID, Vnode, Scans) ->
+    riak_core_vnode_master:command([{Vnode, node()}], #etsdb_get_query_req_v1{get_query = Scans, req_id = ReqID, bucket = index_scan}, {fsm, undefined, self()}, etsdb_vnode_master).
 get_query(ReqID, Preflist, Bucket, Query) ->
     riak_core_vnode_master:command(Preflist, #etsdb_get_query_req_v1{get_query = Query, req_id = ReqID, bucket = Bucket}, {fsm, undefined, self()}, etsdb_vnode_master).
-
 %%Init Callback.
 init([Index]) ->
     DeleteMode = app_helper:get_env(etsdb, delete_mode, 3000),
@@ -195,6 +197,19 @@ handle_command(?ETSDB_GET_QUERY_REQ{get_query = Scans, req_id = ReqID, bucket = 
 handle_command(?ETSDB_GET_QUERY_REQ{get_query = Scans, req_id = ReqID, bucket = custom_scan}, Sender,
     #state{backend = BackEndModule, backend_ref = BackEndRef, vnode_index = Index} = State) ->
     case do_scan(BackEndModule, BackEndRef, Scans) of
+        {async, AsyncWork} ->
+            Fun =
+                fun() ->
+                    InvokeRes = AsyncWork(),
+                    {r, Index, ReqID, InvokeRes} end,
+            {async, {scan, Fun}, Sender, State};
+        Result ->
+            riak_core_vnode:reply(Sender, {r, Index, ReqID, Result}),
+            {noreply, State}
+    end;
+handle_command(?ETSDB_GET_QUERY_REQ{get_query = Scans, req_id = ReqID, bucket = index_scan}, Sender,
+    #state{backend = BackEndModule, backend_ref = BackEndRef, vnode_index = Index} = State) ->
+    case do_index_scan(BackEndModule, BackEndRef, Scans) of
         {async, AsyncWork} ->
             Fun =
                 fun() ->
@@ -326,6 +341,8 @@ terminate(Reason, State) ->
 
 do_get_qyery(BackEndModule, BackEndRef, Bucket, {scan, From, To}) ->
     BackEndModule:scan(Bucket, From, To, [], BackEndRef);
+do_get_qyery(BackEndModule, BackEndRef, Bucket, {scan, index, From, To})->
+    BackEndModule:index(Bucket, From, To, [], BackEndRef);
 do_get_qyery(BackEndModule, BackEndRef, Bucket, {scan, From, To, Acc}) ->
     BackEndModule:scan(Bucket, From, To, Acc, BackEndRef);
 do_get_qyery(_BackEndModule, BackEndRef, _Bucket, _Query) ->
@@ -333,6 +350,9 @@ do_get_qyery(_BackEndModule, BackEndRef, _Bucket, _Query) ->
 
 do_scan(BackEndModule, BackEndRef, Scans) ->
     BackEndModule:scan(Scans, [], BackEndRef).
+do_index_scan(BackEndModule, BackEndRef, Scans) ->
+    BackEndModule:index(Scans, [], BackEndRef).
+
 
 make_dir(undefined) ->
     exit({error, dir_undefined});

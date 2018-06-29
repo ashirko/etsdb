@@ -9,7 +9,7 @@
 
 -record(scan_it,{rgn_count,partition,rgn,from,to,start_rgn,end_rgn}).
 -record(pscan_req,{partition,n_val,quorum,function,catch_end_of_data = false}).
--record(scan_req,{end_fun,join_fun,final_fun,pscan}).
+-record(scan_req,{end_fun,join_fun,final_fun,pscan,index}).
 
 -define(ETSDB_STORE_REQ, #etsdb_store_req_v1).
 -define(ETSDB_GET_QUERY_REQ, #etsdb_get_query_req_v1).

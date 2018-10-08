@@ -64,9 +64,7 @@ execute(timeout, #state{preflist=Preflist,data=Data,bucket=Bucket,timeout=Timeou
     {next_state,wait_result, StateData#state{data=undefined,req_ref=Ref},Timeout};
 execute(timeout, #state{preflist=Preflist,data=Data,bucket=Bucket,timeout=Timeout}=StateData) ->
     Ref = make_ref(),
-%%    lager:info("test_data 4: ~p", [{Bucket, Data}]),
     etsdb_vnode:put_external(Ref,Preflist,Bucket,Data),
-%%    lager:info("test_data 5: ~p", [{Bucket, Data}]),
     {next_state,wait_result, StateData#state{data=undefined,req_ref=Ref},Timeout}.
 
 

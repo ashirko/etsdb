@@ -98,21 +98,11 @@ init([Index]) ->
     %%Start storage backend
     case BackEndModule:init(Index, BackEndProps) of
         {ok, Ref} ->
-            RBuckets = app_helper:get_env(etsdb, registered_bucket),
-            start_clear_buckets(RBuckets),
             {ok, #state{vnode_index = Index, delete_mod = DeleteMode, backend = BackEndModule, backend_ref = Ref}, [{pool, etsdb_vnode_worker, 10, []}]};
         {error, Else} ->
             {error, Else}
     end.
 
-start_clear_buckets([B | Tail]) ->
-    lager:debug("start timer for ~p", [B]),
-    riak_core_vnode:send_command_after(clear_period(B), {clear_db, B}),
-    start_clear_buckets(Tail);
-start_clear_buckets([]) ->
-    ok;
-start_clear_buckets(_) ->
-    ok.
 handle_handoff_command(Req = ?ETSDB_STORE_REQ{}, Sender, State) ->
     {noreply, NewState} = handle_command(Req, Sender, State),
     {forward, NewState};
@@ -134,55 +124,12 @@ handle_command({remove_dumped, Bucket, Records}, _Sender,
     end,
     {noreply, State#state{backend_ref = NewBackEndRef}};
 
-handle_command({remove_expired, _, _}, _Sender,
-    #state{vnode_index = undefined} = State) ->
+handle_command({remove_expired, _, _}, _Sender, State) ->
     {noreply, State};
-handle_command({remove_expired, Bucket, {expired_records, {0, _Records}}}, _Sender,
-    State) ->
-    riak_core_vnode:send_command_after(clear_period(Bucket), {clear_db, Bucket}),
+handle_command({clear_db, _}, _Sender, State) ->
     {noreply, State};
-handle_command({remove_expired, Bucket, {expired_records, {Count, Records}}}, _Sender,
-    #state{backend = BackEndModule, backend_ref = BackEndRef, vnode_index = Index} = State) ->
-    ToDelete = lists:usort(Records),
-    lager:info("remove epired ~p - ~p",[Bucket,Count]),
-    case BackEndModule:delete(Bucket, ToDelete, BackEndRef) of
-        {ok, NewBackEndRef} ->
-            ok;
-        {error, Reason, NewBackEndRef} ->
-            lager:error("Can't delete old records ~p on ~p", [Reason, Index])
-    end,
-    case Count of
-        {continue, _} ->
-            riak_core_vnode:send_command_after(10000, {clear_db, Bucket});
-        _ ->
-            riak_core_vnode:send_command_after(clear_period(Bucket), {clear_db, Bucket})
-    end,
-    {noreply, State#state{backend_ref = NewBackEndRef}};
-
-handle_command({remove_expired, Bucket, Error}, _Sender, #state{vnode_index = Index} = State) ->
-    lager:error("Find expired task failed ~p on ~p", [Error, Index]),
-    riak_core_vnode:send_command_after(clear_period(Bucket), {clear_db, Bucket}),
-    {noreply, State};
-
-handle_command({clear_db, _}, _Sender,
-    #state{vnode_index = undefined} = State) ->
-    {noreply, State};
-handle_command({clear_db, Bucket}, Sender,
-    #state{backend = BackEndModule, backend_ref = BackEndRef, vnode_index = Index} = State) ->
-    Me = self(),
-    case BackEndModule:find_expired(Bucket, BackEndRef) of
-        {async, AsyncWork} ->
-            Fun = fun() ->
-                riak_core_vnode:send_command(Me, {remove_expired, Bucket, AsyncWork()}) end,
-            {async, {clear_db, Fun}, Sender, State};
-        Else ->
-            lager:error("Can't create clear db task ~p on ~p", [Else, Index]),
-            {noreply, State}
-    end;
-
 handle_command({register, Bucket}, Sender, State) ->
     lager:info("register ~p", [Bucket]),
-    riak_core_vnode:send_command_after(clear_period(Bucket), {clear_db, Bucket}),
     riak_core_vnode:reply(Sender, started),
     {noreply, State};
 %%Receive command to store data in user format.
@@ -386,10 +333,6 @@ do_get_qyery(_BackEndModule, BackEndRef, _Bucket, _Query) ->
 
 do_scan(BackEndModule, BackEndRef, Scans) ->
     BackEndModule:scan(Scans, [], BackEndRef).
-
-clear_period(Bucket) ->
-    I = Bucket:clear_period(),
-    I + etsdb_util:random_int(I).
 
 make_dir(undefined) ->
     exit({error, dir_undefined});

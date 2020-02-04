@@ -1,7 +1,7 @@
 %% Author: gunin
 %% Created: Nov 28, 2013
 %% Description: TODO: Add description to etsdb_scan_master_fsm
--module(etsdb_scan_master_fsm).
+-module(etsdb_scan_master_fsm_v2).
 -behaviour(gen_fsm).
 
 -export([start_link/3,start_link/4,join_data/3]).
@@ -112,6 +112,7 @@ execute(timeout, #state{local_scaners=ToScan,scan_req=ScanReq,timeout=Timeout,ca
 start_local_fsm([],_Ref,_ScanReq,_Stream,_Timeout,Monitors)->
     Monitors;
 start_local_fsm([{Node,Requests}|Tail],Ref,ScanReq,Stream,Timeout,Monitors)->
+    lager:info("start_local_fsm on node ~p; requests ~p", [Node, Requests]),
     case etsdb_scan_local_fsm:start(Ref,Node) of
         {ok,Pid}->
              MRef = erlang:monitor(process,Pid),
@@ -127,17 +128,20 @@ stop_started(Started)->
                           etsdb_scan_local_fsm:stop(Pid) end,Started).
 
 wait_result(timeout,#state{caller=Caller,local_scaners=Scaners}=StateData) ->
+    lager:info("wait results 1. Caller ~p; local_scaners: ~p", [Caller, Scaners]),
      reply_to_caller(Caller,{error,timeout}),
      stop_started(Scaners),
      {stop,normal,StateData#state{data=undefined,local_scaners=[]}};
 
 wait_result({local_scan,ReqID,From,Error,Ack,LocalData},#state{req_ref=ReqID}=StateData) ->
-    lager:error("Fail some scan on ~p reason ~p",[node(From),Error]),
+    lager:error("wait results 2. Fail some scan on ~p reason ~p",[node(From),Error]),
     receive_ack(From,Ack,LocalData,StateData);
 wait_result({local_scan,ReqID,From,Ack,LocalData},#state{req_ref=ReqID}=StateData) ->
+    lager:info("wait results 3. ReqID ~p; From: ~p; Ask: ~p;  ReqID: ~p; local_data: ~p", [ReqID, From, Ack, ReqID, LocalData]),
+    lager:info("wait results 3-1. StateData: ~p", [StateData]),
     receive_ack(From,Ack,LocalData,StateData);
 wait_result({local_scan,ReqID,From,Error},#state{caller=Caller,req_ref=ReqID,local_scaners=Scaners}=StateData) ->
-    lager:error("fail scan on ~p reason ~p",[node(From),Error]),
+    lager:error("wait results 4. fail scan on ~p reason ~p",[node(From),Error]),
     NewScaners = lists:keydelete(From, 2,Scaners),
     reply_to_caller(Caller,Error),
     stop_started(NewScaners),

@@ -62,7 +62,6 @@ wait_result(timeout, #state{caller = Caller, count = Count, to_ack = ToAck, ack_
     reply_to_caller(Caller, {error, timeout}, NewToAck, Data),
     {stop, normal, clear_state(StateData)};
 wait_result({r, Index, ReqID, Result}, #state{caller = Caller, scan = Scan, count = Count, req_ref = ReqID, to_ack = ToAck, ack_index = AckIndex, data = Data} = StateData) ->
-    lager:info("wait_result: ~p; ~p", [node(), {Index, ReqID, Result}]),
     NewCount = Count - 1,
     {RefToAcc, NewAckIndex} = case orddict:find(Index, AckIndex) of
                                   {ok, List} ->

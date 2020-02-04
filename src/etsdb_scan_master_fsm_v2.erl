@@ -113,10 +113,10 @@ start_local_fsm([],_Ref,_ScanReq,_Stream,_Timeout,Monitors)->
     Monitors;
 start_local_fsm([{Node,Requests}|Tail],Ref,ScanReq,Stream,Timeout,Monitors)->
     lager:info("start_local_fsm on node ~p; requests ~p", [Node, Requests]),
-    case etsdb_scan_local_fsm:start(Ref,Node) of
+    case etsdb_scan_local_fsm_v2:start(Ref,Node) of
         {ok,Pid}->
              MRef = erlang:monitor(process,Pid),
-             etsdb_scan_local_fsm:ack(Pid,ScanReq#scan_req{pscan=Requests},Stream,Timeout),
+             etsdb_scan_local_fsm_v2:ack(Pid,ScanReq#scan_req{pscan=Requests},Stream,Timeout),
              start_local_fsm(Tail,Ref,ScanReq,Stream,Timeout,[{MRef,Pid}|Monitors]);
         Else->
             lager:error("Can't start local scan on ~p reason ~p",[Node,Else]),
@@ -125,7 +125,7 @@ start_local_fsm([{Node,Requests}|Tail],Ref,ScanReq,Stream,Timeout,Monitors)->
 
 stop_started(Started)->
     lists:foreach(fun({_,Pid})->
-                          etsdb_scan_local_fsm:stop(Pid) end,Started).
+                          etsdb_scan_local_fsm_v2:stop(Pid) end,Started).
 
 wait_result(timeout,#state{caller=Caller,local_scaners=Scaners}=StateData) ->
     lager:info("wait results 1. Caller ~p; local_scaners: ~p", [Caller, Scaners]),

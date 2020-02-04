@@ -37,6 +37,7 @@ exec_v2(Stream,ScanReq,Timeout)->
     etsdb_scan_master_fsm_v2:start_link({raw,ReqRef,Me}, ScanReq,Stream,Timeout),
     case wait_for_results(ReqRef,client_wait_timeout(Timeout)) of
         {ok,Res} when is_list(Res)->
+            lager:info("exec_2 received result: ~p", [Res]),
             {ok,Res};
         Else->
             lager:error("Bad scan responce for ~p used timeout ~p",[ScanReq,Timeout]),

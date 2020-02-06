@@ -61,7 +61,7 @@ prepare(#state{caller=Caller,scan_req=ScanReq}=StateData) ->
             reply_to_caller(Caller,{error,Error}),
             {stop,normal,StateData};
         ReqNodes->
-            lager:info("ReqNodes length: ~p; data: ~p", [length(ReqNodes), ReqNodes]),
+%%            lager:info("ReqNodes length: ~p; data: ~p", [length(ReqNodes), ReqNodes]),
             {next_state,execute,StateData#state{local_scaners=ReqNodes,ack_data=lists:ukeysort(1,AckData)},0}
     end.
 

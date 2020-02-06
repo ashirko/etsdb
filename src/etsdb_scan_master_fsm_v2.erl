@@ -112,7 +112,7 @@ execute(timeout, #state{local_scaners=ToScan,scan_req=ScanReq,timeout=Timeout,ca
 start_local_fsm([],_Ref,_ScanReq,_Stream,_Timeout,Monitors)->
     Monitors;
 start_local_fsm([{Node,Requests}|Tail],Ref,ScanReq,Stream,Timeout,Monitors)->
-    lager:info("start_local_fsm on node ~p; requests ~p", [Node, Requests]),
+%%    lager:info("start_local_fsm on node ~p; requests ~p", [Node, Requests]),
     case etsdb_scan_local_fsm_v2:start(Ref,Node) of
         {ok,Pid}->
              MRef = erlang:monitor(process,Pid),
